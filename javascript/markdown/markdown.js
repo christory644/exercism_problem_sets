@@ -1,101 +1,66 @@
-function wrap(text, tag) {
+function wrapWithTag(text, tag) {
   return `<${tag}>${text}</${tag}>`;
 }
 
-function isTag(text, tag) {
-  return text.startsWith(`<${tag}>`);
+function parseStrong(markdown) {
+  const pattern = /__(.+?)__/g;
+  return markdown.replace(pattern, (match, text) => wrapWithTag(text, 'strong'));
 }
 
-function parser(markdown, delimiter, tag) {
-  const pattern = new RegExp(`${delimiter}(.+)${delimiter}`);
-  const replacement = `<${tag}>$1</${tag}>`;
-  return markdown.replace(pattern, replacement);
+function parseEmphasis(markdown) {
+  const pattern = /_(.+?)_/g;
+  return markdown.replace(pattern, (match, text) => wrapWithTag(text, 'em'));
 }
 
-function parse__(markdown) {
-  return parser(markdown, '__', 'strong');
+function parseText(markdown, isInline = false) {
+  const parsedText = parseEmphasis(parseStrong(markdown));
+  return isInline ? parsedText : wrapWithTag(parsedText, 'p');
 }
 
-function parse_(markdown) {
-  return parser(markdown, '_', 'em');
+function parseHeader(line) {
+  const match = line.match(/^(#{1,6})\s+(.*)$/);
+  if (!match) return null;
+
+  const [ , hashes, text ] = match;
+  const headerTag = `h${hashes.length}`;
+  return wrapWithTag(text.trim(), headerTag);
 }
 
-function parseText(markdown, list) {
-  const parsedText = parse_(parse__(markdown));
-  if (list) {
-    return parsedText;
-  } else {
-    return wrap(parsedText, 'p');
-  }
+function parseListItem(line, inList) {
+  if (!line.startsWith('* ')) return null;
+  const listItem = wrapWithTag(parseText(line.substring(2), true), 'li');
+  return inList ? listItem : `<ul>${listItem}`;
 }
 
-function parseHeader(markdown, list) {
-  let count = 0;
-  for (let i = 0; i < markdown.length; i++) {
-    if (markdown[i] === '#') {
-      count += 1;
-    } else {
-      break;
-    }
-  }
-  if (count === 0 || count > 6) {
-    return [null, list];
-  }
-  const headerTag = `h${count}`;
-  const headerHtml = wrap(markdown.substring(count + 1), headerTag);
-  if (list) {
-    return [`</ul>${headerHtml}`, false];
-  } else {
-    return [headerHtml, false];
-  }
+function parseParagraph(line, inList) {
+  const paragraph = parseText(line);
+  return inList ? `</ul>${paragraph}` : paragraph;
 }
 
-function parseLineItem(markdown, list) {
-  if (markdown.startsWith('*')) {
-    const innerHtml = wrap(parseText(markdown.substring(2), true), 'li');
-    if (list) {
-      return [innerHtml, true];
-    } else {
-      return [`<ul>${innerHtml}`, true];
-    }
-  }
-  return [null, list];
-}
+function parseLine(line, inList) {
+  let result = parseHeader(line);
+  if (result) return { result, inList: false };
 
-function parseParagraph(markdown, list) {
-  if (!list) {
-    return [parseText(markdown, false), false];
-  } else {
-    return [`</ul>${parseText(markdown, false)}`, false];
-  }
-}
+  result = parseListItem(line, inList);
+  if (result) return { result, inList: true };
 
-function parseLine(markdown, list) {
-  let [result, inListAfter] = parseHeader(markdown, list);
-  if (result === null) {
-    [result, inListAfter] = parseLineItem(markdown, list);
-  }
-  if (result === null) {
-    [result, inListAfter] = parseParagraph(markdown, list);
-  }
-  if (result === null) {
-    throw new Error('Invalid markdown');
-  }
-  return [result, inListAfter];
+  result = parseParagraph(line, inList);
+  if (result) return { result, inList: false };
+
+  throw new Error('Invalid markdown line');
 }
 
 export function parse(markdown) {
   const lines = markdown.split('\n');
   let result = '';
-  let list = false;
-  for (let i = 0; i < lines.length; i++) {
-    let [lineResult, newList] = parseLine(lines[i], list);
+  let inList = false;
+
+  lines.forEach((line) => {
+    const { result: lineResult, inList: newListStatus } = parseLine(line, inList);
     result += lineResult;
-    list = newList;
-  }
-  if (list) {
-    return result + '</ul>';
-  } else {
-    return result;
-  }
+    inList = newListStatus;
+  });
+
+  if (inList) result += '</ul>';
+  return result;
 }
