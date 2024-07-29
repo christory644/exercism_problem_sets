@@ -47,16 +47,24 @@ export function monitorTheMachine(actions) {
     actions.check();
   }
   catch (error) {
-    if (error instanceof ArgumentError) {
-      actions.alertDeadSensor();
-    } else if (error instanceof OverheatingError) {
-      if (error.temperature > 600) {
-        actions.shutdown();
-      } else {
-        actions.alertOverheating();
-      }
-    } else {
-      throw error;
-    }
+    handleActionError(error, actions);
+  }
+}
+
+function handleActionError(error, actions) {
+  if (error instanceof ArgumentError) {
+    actions.alertDeadSensor();
+  } else if (error instanceof OverheatingError) {
+    handleOverheatingError(error, actions);
+  } else {
+    throw error;
+  }
+}
+
+function handleOverheatingError(error, actions) {
+  if (error.temperature > 600) {
+    actions.shutdown();
+  } else {
+    actions.alertOverheating();
   }
 }
